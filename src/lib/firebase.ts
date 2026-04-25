@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -8,7 +8,7 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth();
 
-enum OperationType {
+export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
   DELETE = 'delete',
@@ -27,18 +27,6 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   };
-  console.error('Firestore Diagnostic Error:', JSON.stringify(errInfo, null, 2));
+  console.error('Firestore Error:', JSON.stringify(errInfo, null, 2));
   return errInfo;
 }
-
-// Test connection on boot to catch configuration issues early
-const testConnection = async () => {
-  try {
-    // We attempt to get a non-existent doc just to check the channel connectivity
-    await getDocFromServer(doc(db, '_internal_', 'connectivity_check'));
-    console.log("Firebase connectivity check: Channel established.");
-  } catch (error: any) {
-    handleFirestoreError(error, OperationType.GET, '_internal_/connectivity_check');
-  }
-};
-testConnection();
