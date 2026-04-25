@@ -36,15 +36,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signIn = async () => {
     try {
       const provider = new GoogleAuthProvider();
+      // Ensure this is called in the same tick as user interaction if possible
       await signInWithPopup(auth, provider);
     } catch (error: any) {
       if (error.code === 'auth/popup-blocked') {
-        alert('Sign-in popup blocked. Please allow popups for this site and try again.');
+        alert('Sign-in popup was blocked by your browser. Please click the sign-in button again and allow popups for this site when prompted (look for the icon in your browser\'s address bar).');
       } else if (error.code === 'auth/unauthorized-domain') {
-        alert(`This domain (${window.location.hostname}) is not authorized for sign-in. You must add it to the "Authorized Domains" list in your Firebase Console -> Authentication -> Settings.`);
+        const domain = window.location.hostname;
+        alert(`Domain Unauthorized: "${domain}" is not in the Firebase Authorized Domains list. \n\nPlease add it in: Firebase Console -> Authentication -> Settings -> Authorized domains.`);
+        console.error('Unauthorized Domain:', domain);
       } else {
         console.error('Authentication Error:', error);
-        alert('An authentication error occurred. Please check the console for details.');
+        alert(`Sign-in failed: ${error.message || 'Unknown error'}`);
       }
     }
   };
