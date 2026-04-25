@@ -1,0 +1,113 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 3. Global Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return request.auth.token.email_verified == true;
+    }
+
+    function isBootstrapAdmin() {
+      return isSignedIn() && request.auth.token.email == 'mic1dev.me@gmail.com' && isEmailVerified();
+    }
+
+    function getUserData(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    function isAdmin() {
+      return isBootstrapAdmin() || (isSignedIn() && getUserData(request.auth.uid).role == 'admin');
+    }
+
+    function isManager() {
+      return isSignedIn() && getUserData(request.auth.uid).role == 'manager';
+    }
+
+    function isStaff() {
+      return isSignedIn() && getUserData(request.auth.uid).role == 'staff';
+    }
+
+    function getUserBranch() {
+      return getUserData(request.auth.uid).branch;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 2. Validation Blueprints
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'email', 'role', 'branch', 'status'])
+        && data.uid is string && data.uid.size() <= 128
+        && data.displayName is string && data.displayName.size() <= 100
+        && data.email is string && data.email.size() <= 100
+        && data.role in ['admin', 'manager', 'staff']
+        && data.branch is string && data.branch.size() <= 50
+        && data.status in ['active', 'exited'];
+    }
+
+    function isValidAttendance(data) {
+      return data.keys().hasAll(['userId', 'date', 'status', 'branch'])
+        && data.userId is string && data.userId.size() <= 128
+        && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.status in ['present', 'absent', 'leave']
+        && data.branch is string && data.branch.size() <= 50;
+    }
+
+    function isValidLeave(data) {
+      return data.keys().hasAll(['userId', 'type', 'startDate', 'endDate', 'status', 'branch'])
+        && data.userId is string && data.userId.size() <= 128
+        && data.status in ['pending', 'approved', 'rejected']
+        && data.branch is string && data.branch.size() <= 50;
+    }
+
+    // 4. Matches
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isAdmin() || (isManager() && resource.data.branch == getUserBranch()) || (isSignedIn() && resource.data.status == 'active');
+      allow create: if isAdmin() || isBootstrapAdmin() || (request.auth.uid == userId && isValidUser(incoming()));
+      allow update: if isAdmin() || (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'jobTitle']));
+      allow delete: if isAdmin();
+    }
+
+    match /attendance/{attendanceId} {
+      allow read: if isAdmin() || (isManager() && resource.data.branch == getUserBranch()) || (resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && isValidAttendance(incoming()) && (isAdmin() || incoming().userId == request.auth.uid);
+      allow update: if isAdmin() || (isManager() && existing().branch == getUserBranch());
+      allow delete: if isAdmin();
+    }
+
+    match /leaves/{leaveId} {
+      allow read: if isAdmin() || (isManager() && resource.data.branch == getUserBranch()) || (resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && isValidLeave(incoming()) && (isAdmin() || incoming().userId == request.auth.uid);
+      allow update: if isAdmin() || (isManager() && existing().branch == getUserBranch());
+      allow delete: if isAdmin();
+    }
+
+    match /vacancies/{vacancyId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isManager();
+    }
+
+    match /placements/{placementId} {
+      allow read: if isAdmin() || isManager();
+      allow write: if isAdmin() || isManager();
+    }
+  }
+}
