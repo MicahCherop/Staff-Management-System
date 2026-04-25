@@ -1,5 +1,13 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, User as FirebaseUser, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
+import { 
+  onAuthStateChanged, 
+  User as FirebaseUser, 
+  signInWithPopup, 
+  signInWithRedirect,
+  getRedirectResult,
+  GoogleAuthProvider, 
+  signOut 
+} from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { userService } from '../services/db';
 import { User as AppUser } from '../types';
@@ -20,6 +28,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Check for redirect result on mount
+    getRedirectResult(auth).catch((error) => {
+      console.error('Redirect Sign-in Error:', error);
+    });
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         const profile = await userService.getUser(firebaseUser.uid) as AppUser | null;
@@ -34,17 +47,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signIn = async () => {
+    const provider = new GoogleAuthProvider();
     try {
-      const provider = new GoogleAuthProvider();
-      // Ensure this is called in the same tick as user interaction if possible
+      // Try popup first (better UX if it works)
       await signInWithPopup(auth, provider);
     } catch (error: any) {
-      if (error.code === 'auth/popup-blocked') {
-        alert('Sign-in popup was blocked by your browser. Please click the sign-in button again and allow popups for this site when prompted (look for the icon in your browser\'s address bar).');
+      // Handle blocked popup or cancelled request by falling back to redirect
+      if (error.code === 'auth/popup-blocked' || error.code === 'auth/cancelled-popup-request') {
+        console.warn('Popup blocked or cancelled, falling back to redirect flow...');
+        try {
+          await signInWithRedirect(auth, provider);
+        } catch (redirectError: any) {
+          console.error('Redirect Flow Error:', redirectError);
+          alert('Sign-in failed. Please ensure cookies are enabled or try a different browser.');
+        }
       } else if (error.code === 'auth/unauthorized-domain') {
         const domain = window.location.hostname;
-        alert(`Domain Unauthorized: "${domain}" is not in the Firebase Authorized Domains list. \n\nPlease add it in: Firebase Console -> Authentication -> Settings -> Authorized domains.`);
-        console.error('Unauthorized Domain:', domain);
+        alert(`Domain Unauthorized: "${domain}" is not in the Firebase Authorized Domains list.`);
       } else {
         console.error('Authentication Error:', error);
         alert(`Sign-in failed: ${error.message || 'Unknown error'}`);
